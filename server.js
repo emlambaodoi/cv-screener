@@ -68,7 +68,7 @@ app.post('/api/analyze', upload.array('cvs'), async (req, res) => {
       `;
 
 const response = await ai.models.generateContent({
-        model: 'gemini-1.5-flash', // hoặc model mới được hỗ trợ
+        model: 'gemini-3.8-flash', // <-- Đổi thành tên model này
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
