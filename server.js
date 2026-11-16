@@ -9,12 +9,13 @@ const nodemailer = require('nodemailer');
 const { GoogleGenAI, Type } = require('@google/genai');
 
 const app = express();
-const upload = multer({ dest: 'uploads/' });
+// Vercel chỉ cho phép ghi file tạm vào thư mục /tmp
+const upload = multer({ dest: '/tmp/' });
 const ai = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY });
 
 app.use(express.json());
 
-// Cho phép load trang web trực tiếp từ file index.html ở thư mục gốc
+// Load file index.html ở thư mục gốc
 app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
@@ -28,7 +29,7 @@ const transporter = nodemailer.createTransport({
   },
 });
 
-// Đọc text từ file CV
+// Đọc text từ file CV tạm trong /tmp
 async function extractText(filePath, originalName) {
   const ext = path.extname(originalName).toLowerCase();
   if (ext === '.pdf') {
@@ -123,7 +124,7 @@ app.post('/api/reject', async (req, res) => {
   }
 });
 
-// API 3: Đẩy dữ liệu qua Google Apps Script để ghi vào Google Sheet
+// API 3: Đẩy dữ liệu qua Google Apps Script ghi vào Google Sheet
 app.post('/api/approve', async (req, res) => {
   try {
     const response = await fetch(process.env.GOOGLE_SCRIPT_URL, {
@@ -138,5 +139,11 @@ app.post('/api/approve', async (req, res) => {
   }
 });
 
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`Server đang chạy trên cổng ${PORT}`));
+// Chạy local nếu không phải trên Vercel
+if (require.main === module) {
+  const PORT = process.env.PORT || 3000;
+  app.listen(PORT, () => console.log(`Server đang chạy trên cổng ${PORT}`));
+}
+
+// Xuất khẩu app để Vercel Serverless Function nhận diện
+module.exports = app;
