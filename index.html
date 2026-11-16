@@ -1,0 +1,225 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI CV Screener & Tracking</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+
+<body class="bg-slate-50 text-slate-800 min-h-screen p-6">
+    <div class="max-w-6xl mx-auto">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-2xl font-bold text-indigo-600">AI CV Screener</h1>
+                <p class="text-sm text-slate-500">Sàng lọc CV tự động bằng Gemini AI, gửi mail từ chối & đồng bộ Google
+                    Sheets</p>
+            </div>
+        </header>
+
+        <!-- Khu vực nhập JD & Upload CV -->
+        <div
+            class="grid grid-cols-1 md:grid-cols-2 gap-6 bg-white p-6 rounded-xl shadow-sm border border-slate-200 mb-8">
+            <div>
+                <label class="block text-sm font-semibold mb-2">1. Nhập Mô tả công việc (JD)</label>
+                <textarea id="jdInput" rows="6"
+                    class="w-full p-3 border border-slate-300 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 focus:outline-none"
+                    placeholder="Dán yêu cầu công việc, kỹ năng cần thiết, kinh nghiệm... vào đây"></textarea>
+            </div>
+
+            <div class="flex flex-col justify-between">
+                <div>
+                    <label class="block text-sm font-semibold mb-2">2. Tải lên các file CV (PDF, DOCX)</label>
+                    <div id="dropZone"
+                        class="border-2 border-dashed border-indigo-300 rounded-lg p-8 text-center cursor-pointer hover:bg-indigo-50 transition">
+                        <input type="file" id="cvFiles" multiple accept=".pdf,.docx" class="hidden">
+                        <p class="text-indigo-600 font-medium">Bấm để chọn hoặc kéo thả nhiều file CV vào đây</p>
+                        <p id="fileCount" class="text-xs text-slate-500 mt-2">Chưa có file nào được chọn</p>
+                    </div>
+                </div>
+
+                <button id="analyzeBtn" onclick="analyzeCVs()"
+                    class="mt-4 w-full bg-indigo-600 hover:bg-indigo-700 text-white font-semibold py-3 px-4 rounded-lg transition flex justify-center items-center gap-2">
+                    <span>Bắt đầu Sàng lọc bằng AI</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Bảng kết quả sàng lọc -->
+        <div id="resultSection" class="hidden bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+            <div class="p-4 bg-slate-100 border-b border-slate-200 flex justify-between items-center">
+                <h2 class="font-semibold text-slate-700">Kết quả phân tích từ AI (Có thể sửa trực tiếp Email trước khi
+                    gửi)</h2>
+                <button onclick="processAll()"
+                    class="bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold px-4 py-2 rounded-lg">
+                    Xử lý tự động tất cả theo đề xuất AI
+                </button>
+            </div>
+
+            <div class="overflow-x-auto">
+                <table class="w-full text-left border-collapse">
+                    <thead>
+                        <tr class="border-b border-slate-200 text-xs uppercase text-slate-500 bg-slate-50">
+                            <th class="p-4">Ứng viên / File</th>
+                            <th class="p-4">Liên hệ (Có thể sửa)</th>
+                            <th class="p-4">Điểm</th>
+                            <th class="p-4 w-1/3">Đánh giá của AI</th>
+                            <th class="p-4 text-right">Hành động</th>
+                        </tr>
+                    </thead>
+                    <tbody id="resultTableBody" class="divide-y divide-slate-200 text-sm"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('cvFiles');
+        const fileCount = document.getElementById('fileCount');
+        let candidatesData = [];
+
+        // Xử lý sự kiện chọn / kéo thả file
+        dropZone.onclick = () => fileInput.click();
+        fileInput.onchange = () => updateFileCount(fileInput.files);
+        dropZone.ondragover = (e) => { e.preventDefault(); dropZone.classList.add('bg-indigo-50'); };
+        dropZone.ondragleave = () => dropZone.classList.remove('bg-indigo-50');
+        dropZone.ondrop = (e) => {
+            e.preventDefault();
+            dropZone.classList.remove('bg-indigo-50');
+            fileInput.files = e.dataTransfer.files;
+            updateFileCount(fileInput.files);
+        };
+
+        function updateFileCount(files) {
+            fileCount.textContent = files.length > 0 ? `Đã chọn ${files.length} file CV` : 'Chưa có file nào được chọn';
+        }
+
+        // Gọi API phân tích CV
+        async function analyzeCVs() {
+            const jd = document.getElementById('jdInput').value.trim();
+            const files = fileInput.files;
+            if (!jd) return alert('Vui lòng nhập Mô tả công việc (JD)!');
+            if (files.length === 0) return alert('Vui lòng chọn ít nhất 1 file CV!');
+
+            const btn = document.getElementById('analyzeBtn');
+            btn.disabled = true;
+            btn.innerHTML = '⏳ AI đang đọc và chấm điểm CV...';
+
+            const formData = new FormData();
+            formData.append('jd', jd);
+            for (let i = 0; i < files.length; i++) {
+                formData.append('cvs', files[i]);
+            }
+
+            try {
+                const res = await fetch('/api/analyze', { method: 'POST', body: formData });
+                const data = await res.json();
+                candidatesData = data.results;
+                renderTable();
+            } catch (err) {
+                alert('Có lỗi xảy ra: ' + err.message);
+            } finally {
+                btn.disabled = false;
+                btn.innerHTML = 'Bắt đầu Sàng lọc bằng AI';
+            }
+        }
+
+        // Hiển thị bảng kết quả
+        function renderTable() {
+            const tbody = document.getElementById('resultTableBody');
+            tbody.innerHTML = '';
+            document.getElementById('resultSection').classList.remove('hidden');
+
+            candidatesData.forEach((c, index) => {
+                if (c.error) {
+                    tbody.innerHTML += `<tr class="bg-red-50"><td colspan="5" class="p-4 text-red-600">Lỗi đọc file <b>${c.fileName}</b>: ${c.error}</td></tr>`;
+                    return;
+                }
+
+                const badge = c.isQualified
+                    ? `<span class="px-2 py-1 bg-emerald-100 text-emerald-700 font-bold rounded text-xs">${c.score}/100 (ĐẠT)</span>`
+                    : `<span class="px-2 py-1 bg-rose-100 text-rose-700 font-bold rounded text-xs">${c.score}/100 (LOẠI)</span>`;
+
+                tbody.innerHTML += `
+          <tr id="row-${index}" class="hover:bg-slate-50">
+            <td class="p-4">
+              <div class="font-semibold text-slate-900">${c.fullName || 'Không rõ tên'}</div>
+              <div class="text-xs text-slate-400">${c.fileName}</div>
+            </td>
+            <td class="p-4 space-y-1">
+              <input type="text" id="email-${index}" value="${c.email || ''}" class="border border-slate-300 rounded px-2 py-1 text-xs w-48" placeholder="Email ứng viên">
+              <div class="text-xs text-slate-500">${c.phone || 'Không có SĐT'}</div>
+            </td>
+            <td class="p-4">${badge}</td>
+            <td class="p-4 text-xs text-slate-600">${c.summary}</td>
+            <td class="p-4 text-right space-x-2" id="action-${index}">
+              <button onclick="approveCandidate(${index})" class="bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-1.5 rounded text-xs font-medium">
+                Lưu Sheet
+              </button>
+              <button onclick="rejectCandidate(${index})" class="bg-rose-600 hover:bg-rose-700 text-white px-3 py-1.5 rounded text-xs font-medium">
+                Gửi Reject
+              </button>
+            </td>
+          </tr>
+        `;
+            });
+        }
+
+        // Đưa vào Google Sheet
+        async function approveCandidate(index) {
+            const c = candidatesData[index];
+            c.email = document.getElementById(`email-${index}`).value;
+            const actionCell = document.getElementById(`action-${index}`);
+            actionCell.innerHTML = '<span class="text-xs text-slate-400">Đang lưu...</span>';
+
+            const res = await fetch('/api/approve', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(c)
+            });
+
+            if (res.ok) {
+                actionCell.innerHTML = '<span class="text-xs font-semibold text-emerald-600">✅ Đã thêm vào Sheet</span>';
+            } else {
+                actionCell.innerHTML = '<span class="text-xs text-red-600">❌ Lỗi lưu Sheet</span>';
+            }
+        }
+
+        // Gửi mail từ chối
+        async function rejectCandidate(index) {
+            const c = candidatesData[index];
+            const email = document.getElementById(`email-${index}`).value;
+            const actionCell = document.getElementById(`action-${index}`);
+            actionCell.innerHTML = '<span class="text-xs text-slate-400">Đang gửi mail...</span>';
+
+            const res = await fetch('/api/reject', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ fullName: c.fullName, email })
+            });
+
+            if (res.ok) {
+                actionCell.innerHTML = '<span class="text-xs font-semibold text-rose-600">✉️ Đã gửi mail Reject</span>';
+            } else {
+                const err = await res.json();
+                actionCell.innerHTML = `<span class="text-xs text-red-600">❌ ${err.error}</span>`;
+            }
+        }
+
+        // Xử lý tự động toàn bộ danh sách theo điểm AI
+        async function processAll() {
+            for (let i = 0; i < candidatesData.length; i++) {
+                if (candidatesData[i].error) continue;
+                if (candidatesData[i].isQualified) {
+                    await approveCandidate(i);
+                } else {
+                    await rejectCandidate(i);
+                }
+            }
+        }
+    </script>
+</body>
+
+</html>
