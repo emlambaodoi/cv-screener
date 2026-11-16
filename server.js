@@ -67,8 +67,8 @@ app.post('/api/analyze', upload.array('cvs'), async (req, res) => {
         ${cvText}
       `;
 
-      const response = await ai.models.generateContent({
-        model: 'gemini-2.5-flash',
+const response = await ai.models.generateContent({
+        model: 'gemini-1.5-flash', // hoặc model mới được hỗ trợ
         contents: prompt,
         config: {
           responseMimeType: 'application/json',
